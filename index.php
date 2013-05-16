@@ -106,7 +106,7 @@ function espresso_save_eventbrite_event($event_data){
 		'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
 		'timezone' => 'GMT-8',
 		'description' => $event_data['event_desc'],
-		'description' => '<h4>$event_data : <pre>' . print_r($event_data,true) . '</pre> <span style="font-size:10px;font-weight:normal;">' . __FILE__ . '<br />line no: ' . __LINE__ . '</span></h4>',
+		//'description' => '<h4>$event_data : <pre>' . print_r($event_data,true) . '</pre> <span style="font-size:10px;font-weight:normal;">' . __FILE__ . '<br />line no: ' . __LINE__ . '</span></h4>',
 		'capacity' => $_REQUEST['reg_limit'],
 		'status' => 'live',
 		'timezone' => get_option('timezone_string')
@@ -143,7 +143,34 @@ function espresso_save_eventbrite_event($event_data){
 				}
 			}
 		}
-		$notifications['success'][] = sprintf(__('Event was successfully added to Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
+		
+		global $wpdb, $org_options;
+		$data = (object)array();
+		$event_id = $_REQUEST['event_id'];
+		
+		//Get the event meta
+		$sql = "SELECT e.event_meta";
+		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
+		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
+		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+		
+		//Unserilaize the meta
+		$data->event_meta = unserialize($data->event_meta);
+		
+		//Merge the eventbrite_id into the event meta
+		$data->event_meta = array_merge($data->event_meta, array('eventbrite_id' => $event_response->process->id));
+		
+		//Update the event meta and add the EB event id
+		$sql = array( 'event_meta' => serialize($data->event_meta) );
+		$event_id = array('id' => $event_id);
+		$sql_data = array('%s');
+		if ($wpdb->update(EVENTS_DETAIL_TABLE, $sql, $event_id, $sql_data, array('%d'))) {
+			
+			$notifications['success'][] = sprintf(__('Event was successfully added to Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
+			
+		}
+		
+		
 	}else{
 		$notifications['error'][] = __('An error occured. The event was not created in Eventbrite.', 'event_espresso');
 	}
@@ -169,6 +196,92 @@ function espresso_save_eventbrite_event($event_data){
 }
 
 add_action('action_hook_espresso_insert_event', 'espresso_save_eventbrite_event', 100, 1);
+
+function espresso_delete_eventbrite_event($event_id){
+	
+		global $wpdb, $org_options;
+		$data = (object)array();
+		$event_id = $_REQUEST['event_id'];
+		
+		//Get the event meta
+		$sql = "SELECT e.event_meta";
+		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
+		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
+		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+		
+		//Unserilaize the meta
+		$data->event_meta = unserialize($data->event_meta);
+		
+		
+		if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
+			
+			global $ee_eb_options;
+	
+			$notifications['success'] = array(); 
+			$notifications['error']	 = array(); 
+			
+			if(!class_exists('Eventbrite')) { 
+				require_once("Eventbrite.php"); 
+			}
+			
+			// Initialize the API client
+			//  Eventbrite API / Application key (REQUIRED)
+			//   http://www.eventbrite.com/api/key/
+			//  Eventbrite user_key (OPTIONAL, only needed for reading/writing private user data)
+			//   http://www.eventbrite.com/userkeyapi
+			$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+										   'user_key' => $ee_eb_options['user_key']);
+			$eb_client = new Eventbrite( $authentication_tokens );
+	
+	
+			$event_update_params = array(
+				'id' => $data->event_meta['eventbrite_id'],	
+				'status' => 'deleted'
+			);
+			
+			//Delete the event in EB
+			$event_response = $eb_client->event_update($event_update_params);
+
+			//Update the EB event id to 0 using array merge
+			$data->event_meta = array_merge($data->event_meta, array('eventbrite_id' => '0'));
+			
+			//Update the event meta and change the EB event id
+			$sql = array( 'event_meta' => serialize($data->event_meta) );
+			$event_id = array('id' => $event_id);
+			$sql_data = array('%s');
+			if ($wpdb->update(EVENTS_DETAIL_TABLE, $sql, $event_id, $sql_data, array('%d'))) {
+				
+				if ($event_response->process->status == 'OK') {
+					$notifications['success'][] = __('Event was successfully deleted from Eventbrite.', 'event_espresso');
+				}else{
+					$notifications['error'][] = __('An error occured. The event was not deleted from Eventbrite.', 'event_espresso');
+				}
+				
+			}
+		}
+	
+	// display success messages
+	if ( ! empty( $notifications['success'] )) { 
+		$success_msg = implode( $notifications['success'], '<br />' );
+	?>
+		<div id="message" class="updated fade">
+			<p> <strong><?php echo $success_msg; ?></strong> </p>
+		</div>
+	<?php
+	}
+	// display error messages
+	if ( ! empty( $notifications['error'] )) {
+		$error_msg = implode( $notifications['error'], '<br />' );
+	?>
+		<div id="message" class="error">
+		<p> <strong><?php echo $error_msg; ?></strong> </p>
+		</div>
+	<?php 
+	
+	}
+}
+
+add_action('action_hook_espresso_delete_event_success', 'espresso_delete_eventbrite_event', 100, 1);
 
 
 // Begin admin settings screen ###########################
