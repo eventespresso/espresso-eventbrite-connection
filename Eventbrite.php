@@ -1,5 +1,5 @@
 <?php
-class Eventbrite {
+class EE_Eventbrite {
     /**
      * Eventbrite API endpoint
      */

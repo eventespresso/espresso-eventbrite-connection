@@ -66,7 +66,6 @@ function espresso_eventbrite_install(){
 
 function espresso_eventbrite_deactivate(){
 	update_option("espresso_eventbrite_active","false"); //set the activation flag to false
-	update_option('espresso_eventbrite_settings', ""); //reset the API key to null.
 }
 
 //register basic activation / deactivation hooks for the eventbrite Integration
@@ -77,25 +76,24 @@ register_deactivation_hook(__FILE__,"espresso_eventbrite_deactivate");
 global $ee_eb_options;
 $ee_eb_options = get_option('espresso_eventbrite_settings');
 
-//Save the event to eventbrite
+//Save the event to Eventbrite
 function espresso_save_eventbrite_event($event_data){
-	global $wpdb, $ee_eb_options;
+	global $wpdb, $org_options, $ee_eb_options;
 	
+	$data = (object)array();
+	$event_id = $event_data['event_id'];
 	$notifications['success'] = array(); 
 	$notifications['error']	 = array(); 
 	
-	if(!class_exists('Eventbrite')) { 
+	//Load the class files
+	if(!class_exists('EE_Eventbrite')) { 
 		require_once("Eventbrite.php"); 
 	}
 	
 	// Initialize the API client
-	//  Eventbrite API / Application key (REQUIRED)
-	//   http://www.eventbrite.com/api/key/
-	//  Eventbrite user_key (OPTIONAL, only needed for reading/writing private user data)
-	//   http://www.eventbrite.com/userkeyapi
 	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
 								   'user_key' => $ee_eb_options['user_key']);
-	$eb_client = new Eventbrite( $authentication_tokens );
+	$eb_client = new EE_Eventbrite( $authentication_tokens );
 	
 	//see http://developer.eventbrite.com/doc/events/event_new/ for a
 	// description of the available event_new parameters:
@@ -104,9 +102,7 @@ function espresso_save_eventbrite_event($event_data){
 		'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
 		'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
 		'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
-		'timezone' => 'GMT-8',
 		'description' => $event_data['event_desc'],
-		//'description' => '<h4>$event_data : <pre>' . print_r($event_data,true) . '</pre> <span style="font-size:10px;font-weight:normal;">' . __FILE__ . '<br />line no: ' . __LINE__ . '</span></h4>',
 		'capacity' => $_REQUEST['reg_limit'],
 		'status' => 'live',
 		'timezone' => get_option('timezone_string')
@@ -117,7 +113,9 @@ function espresso_save_eventbrite_event($event_data){
 	
 	//Create the tickets
 	if ($event_response->process->status == 'OK') {
-				
+		
+		$ticket_ids	= array();
+		$i = 1;
 		//For each Event Espresso price type, create a ticket in EB
 		foreach ($_REQUEST['event_cost'] as $k => $v) {
 			if ($v != '') {
@@ -141,13 +139,16 @@ function espresso_save_eventbrite_event($event_data){
 				if ($ticket_response->process->status != 'OK') {
 					$notifications['error'][] = __('An error occured. The ticket was not added to the event in Eventbrite.', 'event_espresso');
 				}
+				
+				//Create an array of the new ticket ids
+				$ticket_ids[$i] = $ticket_response->process->id;
 			}
+			$i ++;
 		}
 		
-		global $wpdb, $org_options;
-		$data = (object)array();
-		$event_id = $_REQUEST['event_id'];
-		
+		//Merge the arrays
+		$eb_event_data = array_merge( array('eventbrite_id' => $event_response->process->id), array('eb_ticket_ids' => $ticket_ids) );
+
 		//Get the event meta
 		$sql = "SELECT e.event_meta";
 		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
@@ -155,15 +156,17 @@ function espresso_save_eventbrite_event($event_data){
 		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
 		
 		//Unserilaize the meta
-		$data->event_meta = unserialize($data->event_meta);
+		$data->event_meta = unserialize( $data->event_meta );
 		
 		//Merge the eventbrite_id into the event meta
-		$data->event_meta = array_merge($data->event_meta, array('eventbrite_id' => $event_response->process->id));
-		
+		$data->event_meta = array_merge( $data->event_meta, $eb_event_data );
+				
 		//Update the event meta and add the EB event id
-		$sql = array( 'event_meta' => serialize($data->event_meta) );
+		$sql = array( 'event_meta' => serialize( $data->event_meta ) );
 		$event_id = array('id' => $event_id);
 		$sql_data = array('%s');
+		
+		//Run the update query
 		if ($wpdb->update(EVENTS_DETAIL_TABLE, $sql, $event_id, $sql_data, array('%d'))) {
 			
 			$notifications['success'][] = sprintf(__('Event was successfully added to Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
@@ -195,13 +198,136 @@ function espresso_save_eventbrite_event($event_data){
 	}
 }
 
-add_action('action_hook_espresso_insert_event', 'espresso_save_eventbrite_event', 100, 1);
+add_action('action_hook_espresso_insert_event_success', 'espresso_save_eventbrite_event', 100, 1);
+
+//Update an event in Eventbrite
+function espresso_update_eventbrite_event($event_data){
+	global $wpdb, $org_options, $ee_eb_options;
+	$eb_updated = FALSE;
+	$data = (object)array();
+	$event_id = $event_data['event_id'];
+	$notifications['success'] = array(); 
+	$notifications['error']	 = array(); 
+	
+	//Load the class files
+	if(!class_exists('EE_Eventbrite')) { 
+		require_once("Eventbrite.php"); 
+	}
+	
+	// Initialize the API client
+	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+								   'user_key' => $ee_eb_options['user_key']);
+	$eb_client = new EE_Eventbrite( $authentication_tokens );
+	
+	//Get the event meta
+	$sql = "SELECT e.event_meta";
+	$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
+	$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
+	$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+	
+	//Unserilaize the meta
+	$data->event_meta = unserialize($data->event_meta);
+	
+		
+	//If this event has an EB event id, then we delete it
+	if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
+			
+				
+		//see http://developer.eventbrite.com/doc/events/event_new/ for a
+		// description of the available event_new parameters:
+		$event_update_params = array(
+			'id' => $data->event_meta['eventbrite_id'],
+			'title' => $event_data['event'],
+			'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
+			'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
+			'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
+			'description' => $event_data['event_desc'],
+			'capacity' => $_REQUEST['reg_limit'],
+			'status' => 'live',
+		);
+		
+		//Save the event within EB
+		$event_response = $eb_client->event_update($event_update_params);
+		
+		//Create the tickets
+		if ($event_response->process->status == 'OK') {
+			$eb_updated = TRUE;
+			$i = 1;
+			$count = count($event_data['price_type']);
+			
+			//For each Event Espresso price type, create a ticket in EB
+			foreach ($event_data['price_type'] as $k => $v) {
+					
+					if (!empty($v)) {
+					
+						$event_cost = (float)preg_replace('/[^0-9\.]/ui','',$event_data['event_cost'][$k]);//Removes non-integer characters
+			
+						foreach ($data->event_meta['eb_ticket_ids'] as $tv ){
+							
+							if ($data->event_meta['eb_ticket_ids'][$i] == $tv){
+								
+								$ticket_update_params = array(
+									'id' => $tv,
+									'start_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_start'] . ' ' . $event_data['registration_startT'])), // "YYYY-MM-DD HH:MM:SS"
+									'end_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_end'] . ' ' . $event_data['registration_endT'])), // "YYYY-MM-DD HH:MM:SS"
+									'is_donation ' => 0,
+									'name' => $v,
+									'price' => $event_cost,
+									'quantity_available' => $event_data['reg_limit'],
+									'min' => '1',
+									'max' => $event_data['additional_limit'],
+								);
+							
+								//Save the ticket details in the event
+								$ticket_response = $eb_client->ticket_update($ticket_update_params);
+								if ($ticket_response->process->status != 'OK') {
+									$eb_updated = FALSE;
+									$notifications['error'][] = __('An error occured. The ticket was not updated in Eventbrite.', 'event_espresso');
+								}else{
+									$eb_updated = TRUE;
+								}
+							}
+						}
+						
+					}
+				$i ++;
+			}
+						
+		}
+		
+		if ($eb_updated == TRUE){ 
+			$notifications['success'][] = sprintf(__('Event was successfully updated in Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
+		}else{
+			$notifications['error'][] = __('An error occured. The event was not updated in Eventbrite.', 'event_espresso');
+		}
+	}
+	
+	// display success messages
+	if ( ! empty( $notifications['success'] )) { 
+		$success_msg = implode( $notifications['success'], '<br />' );
+	?>
+		<div id="message" class="updated fade">
+			<p> <strong><?php echo $success_msg; ?></strong> </p>
+		</div>
+	<?php
+	}
+	// display error messages
+	if ( ! empty( $notifications['error'] )) {
+		$error_msg = implode( $notifications['error'], '<br />' );
+	?>
+		<div id="message" class="error">
+		<p> <strong><?php echo $error_msg; ?></strong> </p>
+		</div>
+	<?php 
+	}
+}
+
+add_action('action_hook_espresso_update_event_success', 'espresso_update_eventbrite_event', 100, 1);
 
 function espresso_delete_eventbrite_event($event_id){
 	
-		global $wpdb, $org_options;
+		global $wpdb, $org_options, $ee_eb_options;
 		$data = (object)array();
-		$event_id = $_REQUEST['event_id'];
 		
 		//Get the event meta
 		$sql = "SELECT e.event_meta";
@@ -212,26 +338,20 @@ function espresso_delete_eventbrite_event($event_id){
 		//Unserilaize the meta
 		$data->event_meta = unserialize($data->event_meta);
 		
-		
+		//If this event has an EB event id, then we delete it
 		if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
 			
-			global $ee_eb_options;
-	
 			$notifications['success'] = array(); 
 			$notifications['error']	 = array(); 
 			
-			if(!class_exists('Eventbrite')) { 
+			if(!class_exists('EE_Eventbrite')) { 
 				require_once("Eventbrite.php"); 
 			}
 			
 			// Initialize the API client
-			//  Eventbrite API / Application key (REQUIRED)
-			//   http://www.eventbrite.com/api/key/
-			//  Eventbrite user_key (OPTIONAL, only needed for reading/writing private user data)
-			//   http://www.eventbrite.com/userkeyapi
 			$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
 										   'user_key' => $ee_eb_options['user_key']);
-			$eb_client = new Eventbrite( $authentication_tokens );
+			$eb_client = new EE_Eventbrite( $authentication_tokens );
 	
 	
 			$event_update_params = array(
@@ -249,6 +369,8 @@ function espresso_delete_eventbrite_event($event_id){
 			$sql = array( 'event_meta' => serialize($data->event_meta) );
 			$event_id = array('id' => $event_id);
 			$sql_data = array('%s');
+			
+			//Run the update query
 			if ($wpdb->update(EVENTS_DETAIL_TABLE, $sql, $event_id, $sql_data, array('%d'))) {
 				
 				if ($event_response->process->status == 'OK') {
@@ -356,3 +478,27 @@ if (!function_exists('ee_default_event_meta')){
 		//return array('infusionsoft_tag_id'=>'','infusionsoft_campaign_id'=>'');
 	}
 }
+
+function espresso_update_event_update_meta($event_meta, $event_id){
+	global $wpdb;
+	//Get the event meta
+		$sql = "SELECT e.event_meta";
+		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
+		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
+		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+	
+		//Unserilaize the meta
+		$data->event_meta = unserialize($data->event_meta);
+		
+		$eb_ticket_ids = array();
+		
+		if (isset($data->event_meta['eb_ticket_ids'])){
+			$eb_ticket_ids = array('eb_ticket_ids'=>$data->event_meta['eb_ticket_ids']);
+		}
+		
+		$event_meta = array_replace($data->event_meta, $event_meta, $eb_ticket_ids);
+		
+		return $event_meta;
+}
+
+add_filter( 'filter_hook_espresso_update_event_update_meta', 'espresso_update_event_update_meta', 10, 2 );
