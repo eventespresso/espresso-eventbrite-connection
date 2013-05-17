@@ -505,8 +505,7 @@ function espresso_eventbrite_event_editor_options($event_meta = ''){
 	
 	$advanced_options = '<p><strong>'.__('Eventbrite Options:', 'event_espresso').'</strong></p><p class="inputunder"><label>' . __('Use Eventbrite Registration?', 'event_espresso') . '</label> ' . select_input('use_eventbrite_reg', $values, isset($event_meta['use_eventbrite_reg']) ? $event_meta['use_eventbrite_reg'] : '') . '</p>';
 	if ( isset($event_meta['use_eventbrite_reg']) && $event_meta['use_eventbrite_reg'] == 1){
-		$eb_url = 'http://www.eventbrite.com/event/'.$event_meta['eventbrite_id'];
-		$advanced_options .= '<p><a href="'.$eb_url.'" target="_blank">'.__('View on Eventbrite', 'event_espresso').'</a></p>';
+		$advanced_options .= '<p><a href="'.$eb_url.'" target="_blank">'.sprintf(__('[%sview%s] [%sedit%s] on Eventbrite', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_meta['eventbrite_id'].'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_meta['eventbrite_id'].'" target="_blank">', '</a>').'</a></p>';
 	}
 	
 		
@@ -514,7 +513,7 @@ function espresso_eventbrite_event_editor_options($event_meta = ''){
 }
 add_filter( 'filter_hook_espresso_event_editor_advanced_options', 'espresso_eventbrite_event_editor_options', 10, 1 );
 
-function espresso_eventbrite_display_ticket_widget($event_id, $event_meta, $all_meta){
+function espresso_eventbrite_display_event_tickets($event_id, $event_meta, $all_meta){
 	global $ee_eb_options;
 	
 	$height = 200;
@@ -547,4 +546,92 @@ function espresso_eventbrite_display_ticket_widget($event_id, $event_meta, $all_
 		print( EE_Eventbrite::ticketWidget($resp->event,$height.'px') );
 	}
 }
-add_action('action_hook_espresso_registration_page_bottom','espresso_eventbrite_display_ticket_widget', 100, 3);
+add_action('action_hook_espresso_registration_page_bottom','espresso_eventbrite_display_event_tickets', 100, 3);
+
+function espresso_eventbrite_display_eventbrite_calendar($atts = ''){
+	global $ee_eb_options, $this_event_id;
+	
+	if ( empty($atts) && !empty($this_event_id) ){
+		$event_meta = event_espresso_get_event_meta($this_event_id);
+		$atts['id'] = $event_meta['eventbrite_id'];
+	}
+
+	//Load the class files
+	if(!class_exists('EE_Eventbrite')) { 
+		require_once("Eventbrite.php"); 
+	}
+	// Initialize the API client
+	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+									   'user_key' => $ee_eb_options['user_key']);
+	$eb_client = new EE_Eventbrite( $authentication_tokens );
+		
+	$resp = $eb_client->event_get( array('id' => $atts['id']) );
+	print( EE_Eventbrite::calendarWidget($resp->event) );
+}
+add_shortcode('eeeb_calendar','espresso_eventbrite_display_eventbrite_calendar');
+
+function espresso_eventbrite_display_eventbrite_countdown($atts = ''){
+	global $ee_eb_options, $this_event_id;
+	
+	if ( empty($atts) && !empty($this_event_id) ){
+		$event_meta = event_espresso_get_event_meta($this_event_id);
+		$atts['id'] = $event_meta['eventbrite_id'];
+	}
+
+	//Load the class files
+	if(!class_exists('EE_Eventbrite')) { 
+		require_once("Eventbrite.php"); 
+	}
+	// Initialize the API client
+	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+									   'user_key' => $ee_eb_options['user_key']);
+	$eb_client = new EE_Eventbrite( $authentication_tokens );
+		
+	$resp = $eb_client->event_get( array('id' => $atts['id']) );
+	print( EE_Eventbrite::countdownWidget($resp->event) );
+}
+add_shortcode('eeeb_countdown','espresso_eventbrite_display_eventbrite_countdown');
+
+function espresso_eventbrite_display_eventbrite_registration($atts = ''){
+	global $ee_eb_options, $this_event_id;
+	
+	if ( empty($atts) && !empty($this_event_id) ){
+		$event_meta = event_espresso_get_event_meta($this_event_id);
+		$atts['id'] = $event_meta['eventbrite_id'];
+	}
+
+	//Load the class files
+	if(!class_exists('EE_Eventbrite')) { 
+		require_once("Eventbrite.php"); 
+	}
+	// Initialize the API client
+	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+									   'user_key' => $ee_eb_options['user_key']);
+	$eb_client = new EE_Eventbrite( $authentication_tokens );
+		
+	$resp = $eb_client->event_get( array('id' => $atts['id']) );
+	print( EE_Eventbrite::registrationWidget($resp->event) );
+}
+add_shortcode('eeeb_registration','espresso_eventbrite_display_eventbrite_registration');
+
+function espresso_eventbrite_display_eventbrite_tickets($atts = ''){
+	global $ee_eb_options, $this_event_id;
+	$height = isset($atts['height']) ? $atts['height'] : '650px';
+	if ( empty($atts) && !empty($this_event_id) ){
+		$event_meta = event_espresso_get_event_meta($this_event_id);
+		$atts['id'] = $event_meta['eventbrite_id'];
+	}
+
+	//Load the class files
+	if(!class_exists('EE_Eventbrite')) { 
+		require_once("Eventbrite.php"); 
+	}
+	// Initialize the API client
+	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+									   'user_key' => $ee_eb_options['user_key']);
+	$eb_client = new EE_Eventbrite( $authentication_tokens );
+		
+	$resp = $eb_client->event_get( array('id' => $atts['id']) );
+	print( EE_Eventbrite::ticketWidget($resp->event,$height) );
+}
+add_shortcode('eeeb_tickets','espresso_eventbrite_display_eventbrite_tickets');
