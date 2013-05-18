@@ -111,6 +111,7 @@ function espresso_save_eventbrite_event($event_data){
 		);
 		
 		//Save the event within EB
+		$event_response = (object)array();
 		$event_response = $eb_client->event_new($event_new_params);
 		
 		//Create the tickets
@@ -516,7 +517,7 @@ function espresso_eventbrite_event_editor_options($event_meta = ''){
 	
 	$advanced_options = '<p><strong>'.__('Eventbrite Options:', 'event_espresso').'</strong></p>';
 	
-	if (empty($event_meta) || $event_meta['post_to_eventbrite'] == 0 ){
+	if (empty($event_meta) || (isset($event_meta['post_to_eventbrite']) && $event_meta['post_to_eventbrite'] == 0) ){
 		$advanced_options .= '<p class="inputunder"><label>' . __('Post to Eventbrite?', 'event_espresso') . '</label> ' . select_input('post_to_eventbrite', $values, isset($event_meta['post_to_eventbrite']) ? $event_meta['post_to_eventbrite'] : '', 'id="post_to_eventbrite"') . '</p>';
 	}
 	$advanced_options .= '<p id="p_use_eventbrite_reg" class="inputunder"><label>' . __('Use Eventbrite Registration?', 'event_espresso') . '</label> ' . select_input('use_eventbrite_reg', $values, isset($event_meta['use_eventbrite_reg']) ? $event_meta['use_eventbrite_reg'] : '', 'id="use_eventbrite_reg"') . '</p>';
