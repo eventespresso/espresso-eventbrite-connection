@@ -220,11 +220,11 @@ function espresso_update_eventbrite_event($event_data){
 		//Get the event meta
 		$sql = "SELECT e.event_meta";
 		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
-		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
-		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+		$sql.= " WHERE e.id = %d";
+		$event_meta = $wpdb->get_var( $wpdb->prepare( $sql, $event_id ) );
 		
 		//Unserilaize the meta
-		$data->event_meta = unserialize($data->event_meta);
+		$event_meta = unserialize($event_meta);
 		
 		//Save any changes to the Eventbrite status for the event
 		$event_data['use_eventbrite_reg'] = isset($event_data['use_eventbrite_reg']) ? $event_data['use_eventbrite_reg'] : 0;
@@ -232,11 +232,11 @@ function espresso_update_eventbrite_event($event_data){
 		
 			
 		//If this event has an EB event id, then we delete it
-		if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
+		if ( isset($event_meta['eventbrite_id']) && $event_meta['eventbrite_id'] > 0) {
 					
 			//see http://developer.eventbrite.com/doc/events/event_new/ for a description of the available event_new parameters:
 			$event_update_params = array(
-				'id' => $data->event_meta['eventbrite_id'],
+				'id' => $event_meta['eventbrite_id'],
 				'title' => $event_data['event'],
 				'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
 				'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
@@ -254,7 +254,7 @@ function espresso_update_eventbrite_event($event_data){
 				$eb_updated = TRUE;
 				$i = 1;
 				$count_price_types = count($event_data['price_type']);
-				$count_eb_ticket_ids = count($data->event_meta['eb_ticket_ids']);
+				$count_eb_ticket_ids = count($event_meta['eb_ticket_ids']);
 				$price_types_added = array();
 				
 				//For each Event Espresso price type, update the ticket in EB
@@ -265,9 +265,9 @@ function espresso_update_eventbrite_event($event_data){
 						$event_cost = (float)preg_replace('/[^0-9\.]/ui','',$event_data['event_cost'][$k]);//Removes non-integer characters
 						
 						//For each existing ticket, update the ticket in EB
-						foreach ($data->event_meta['eb_ticket_ids'] as $tv ){
+						foreach ($event_meta['eb_ticket_ids'] as $tv ){
 								
-							if ($data->event_meta['eb_ticket_ids'][$i] == $tv){
+							if ($event_meta['eb_ticket_ids'][$i] == $tv){
 									
 								$ticket_update_params = array(
 									'id' => $tv,
@@ -298,7 +298,7 @@ function espresso_update_eventbrite_event($event_data){
 						if ($price_types_added == '1'){
 							
 							$ticket_new_params = array(
-								'event_id' => $data->event_meta['eventbrite_id'],
+								'event_id' => $event_meta['eventbrite_id'],
 								'i'  => $i,
 								'start_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_start'] . ' ' . $event_data['registration_startT'])), // "YYYY-MM-DD HH:MM:SS"
 								'end_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_end'] . ' ' . $event_data['registration_endT'])), // "YYYY-MM-DD HH:MM:SS"
@@ -327,7 +327,7 @@ function espresso_update_eventbrite_event($event_data){
 				}
 				
 				if (!empty($ticket_ids) && is_array($ticket_ids)){
-					$eb_event_data = array('eb_ticket_ids'=>array_merge( $data->event_meta['eb_ticket_ids'], $ticket_ids ));
+					$eb_event_data = array('eb_ticket_ids'=>array_merge( $event_meta['eb_ticket_ids'], $ticket_ids ));
 					do_action('action_hook_espresso_update_event_meta', $event_id, $eb_event_data);
 				}
 				
@@ -370,14 +370,14 @@ function espresso_delete_eventbrite_event($event_id){
 		//Get the event meta
 		$sql = "SELECT e.event_meta";
 		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
-		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
-		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+		$sql.= " WHERE e.id = %d";
+		$event_meta = $wpdb->get_var( $wpdb->prepare( $sql, $event_id ) );
 		
 		//Unserilaize the meta
-		$data->event_meta = unserialize($data->event_meta);
+		$event_meta = unserialize($event_meta);
 		
 		//If this event has an EB event id, then we delete it
-		if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
+		if ( isset($event_meta['eventbrite_id']) && $event_meta['eventbrite_id'] > 0) {
 			
 			$notifications['success'] = array(); 
 			$notifications['error']	 = array(); 
@@ -393,7 +393,7 @@ function espresso_delete_eventbrite_event($event_id){
 	
 	
 			$event_update_params = array(
-				'id' => $data->event_meta['eventbrite_id'],	
+				'id' => $event_meta['eventbrite_id'],	
 				'status' => 'deleted'
 			);
 			
@@ -401,10 +401,10 @@ function espresso_delete_eventbrite_event($event_id){
 			$event_response = $eb_client->event_update($event_update_params);
 
 			//Update the EB event id to 0 using array merge
-			$data->event_meta = array_merge($data->event_meta, array('eventbrite_id' => '0'));
+			$event_meta = array_merge($event_meta, array('eventbrite_id' => '0'));
 			
 			//Update the event meta and change the EB event id
-			$sql = array( 'event_meta' => serialize($data->event_meta) );
+			$sql = array( 'event_meta' => serialize($event_meta) );
 			$event_id = array('id' => $event_id);
 			$sql_data = array('%s');
 			
@@ -590,19 +590,19 @@ function espresso_eventbrite_update_event_update_meta($event_meta, $event_id){
 	//Get the event meta
 		$sql = "SELECT e.event_meta";
 		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
-		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
-		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+		$sql.= " WHERE e.id = %d";
+		$event_meta = $wpdb->get_var( $wpdb->prepare( $sql, $event_id ) );
 	
 		//Unserilaize the meta
-		$data->event_meta = unserialize($data->event_meta);
+		$event_meta = unserialize($event_meta);
 		
 		$eb_ticket_ids = array();
 		
-		if (isset($data->event_meta['eb_ticket_ids'])){
-			$eb_ticket_ids = array('eb_ticket_ids' => $data->event_meta['eb_ticket_ids']);
+		if (isset($event_meta['eb_ticket_ids'])){
+			$eb_ticket_ids = array('eb_ticket_ids' => $event_meta['eb_ticket_ids']);
 		}
 		
-		$event_meta = array_replace($data->event_meta, $event_meta, $eb_ticket_ids);
+		$event_meta = array_replace($event_meta, $event_meta, $eb_ticket_ids);
 		
 		return $event_meta;
 }
