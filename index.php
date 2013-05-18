@@ -101,8 +101,8 @@ function espresso_save_eventbrite_event($event_data){
 		// description of the available event_new parameters:
 		$event_new_params = array(
 			'title' => $event_data['event'],
-			'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
-			'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
+			'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . isset($event_data['event_start_time']) ? $event_data['event_start_time'] : '08:00')), // "YYYY-MM-DD HH:MM:SS"
+			'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . isset($event_data['event_end_time']) ? $event_data['event_end_time']: '08:00' )), // "YYYY-MM-DD HH:MM:SS"
 			'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
 			'description' => $event_data['event_desc'],
 			'capacity' => $_REQUEST['reg_limit'],
@@ -196,7 +196,7 @@ add_action('action_hook_espresso_insert_event_success', 'espresso_save_eventbrit
 //Update an event in Eventbrite
 function espresso_update_eventbrite_event($event_data){
 
-	if ( $event_data['post_to_eventbrite'] == 1 && ( empty($event_data['eventbrite_id']) || $event_data['eventbrite_id'] == 0 ) ){
+	if ( (isset($event_data['post_to_eventbrite']) && $event_data['post_to_eventbrite'] == 1) && ( empty($event_data['eventbrite_id']) || $event_data['eventbrite_id'] == 0 ) ){
 		do_action('action_hook_espresso_insert_event_success',$event_data);
 		return;
 	}
@@ -239,11 +239,11 @@ function espresso_update_eventbrite_event($event_data){
 			$event_update_params = array(
 				'id' => $event_meta['eventbrite_id'],
 				'title' => $event_data['event'],
-				'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
-				'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
+				'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['start_time'])), // "YYYY-MM-DD HH:MM:SS"
+				'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['end_time'])), // "YYYY-MM-DD HH:MM:SS"
 				'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
 				'description' => $event_data['event_desc'],
-				'capacity' => $_REQUEST['reg_limit'],
+				'capacity' => $event_data['reg_limit'],
 				'status' => 'live',
 			);
 			
