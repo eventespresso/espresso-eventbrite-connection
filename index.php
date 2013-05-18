@@ -78,158 +78,28 @@ $ee_eb_options = get_option('espresso_eventbrite_settings');
 
 //Save the event to Eventbrite
 function espresso_save_eventbrite_event($event_data){
-	global $wpdb, $org_options, $ee_eb_options;
-	$eb_updated = FALSE;
-	$data = (object)array();
-	$event_id = $event_data['event_id'];
-	$notifications['success'] = array(); 
-	$notifications['error']	 = array(); 
 	
-	//Load the class files
-	if(!class_exists('EE_Eventbrite')) { 
-		require_once("Eventbrite.php"); 
-	}
-	
-	// Initialize the API client
-	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
-								   'user_key' => $ee_eb_options['user_key']);
-	$eb_client = new EE_Eventbrite( $authentication_tokens );
-	
-	//see http://developer.eventbrite.com/doc/events/event_new/ for a
-	// description of the available event_new parameters:
-	$event_new_params = array(
-		'title' => $event_data['event'],
-		'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
-		'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
-		'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
-		'description' => $event_data['event_desc'],
-		'capacity' => $_REQUEST['reg_limit'],
-		'status' => 'live',
-		'timezone' => get_option('timezone_string')
-	);
-	
-	//Save the event within EB
-	$event_response = $eb_client->event_new($event_new_params);
-	
-	//Create the tickets
-	if ($event_response->process->status == 'OK') {
-		$eb_updated = TRUE;
-		$ticket_ids	= array();
-		$i = 1;
-		//For each Event Espresso price type, create a ticket in EB
-		foreach ($_REQUEST['event_cost'] as $k => $v) {
-			if ($v != '') {
-				$v = (float)preg_replace('/[^0-9\.]/ui','',$v);//Removes non-integer characters
-				$price_type = !empty($_REQUEST['price_type'][$k]) ? sanitize_text_field(stripslashes_deep($_REQUEST['price_type'][$k])) : __('General Admission', 'event_espresso');
+	if ($event_data['post_to_eventbrite'] == 1){
 		
-				$ticket_new_params = array(
-					'event_id' => $event_response->process->id,
-					'start_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_start'] . ' ' . $event_data['registration_startT'])), // "YYYY-MM-DD HH:MM:SS"
-					'end_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_end'] . ' ' . $event_data['registration_endT'])), // "YYYY-MM-DD HH:MM:SS"
-					'is_donation ' => 0,
-					'name' => $price_type,
-					'price' => $v,
-					'quantity_available' => $event_data['reg_limit'],
-					'min' => '1',
-					'max' => $event_data['additional_limit'],
-				);
-				
-				//Save the ticket details in the event
-				$ticket_response = $eb_client->ticket_new($ticket_new_params);
-				if ($ticket_response->process->status != 'OK') {
-					$eb_updated = FALSE;
-					$notifications['error'][] = __('An error occured. The ticket was not added to the event in Eventbrite.', 'event_espresso');
-				}else{
-					$eb_updated = TRUE;
-				}
-				
-				//Create an array of the new ticket ids
-				$ticket_ids[$i] = $ticket_response->process->id;
-			}
-			$i ++;
+		global $wpdb, $org_options, $ee_eb_options;
+		$eb_updated = FALSE;
+		$event_id = $event_data['event_id'];
+		$notifications['success'] = array(); 
+		$notifications['error']	 = array(); 
+		
+		//Load the class files
+		if(!class_exists('EE_Eventbrite')) { 
+			require_once("Eventbrite.php"); 
 		}
 		
-		//Update to use Eventbrite setting
-		$event_data['use_eventbrite_reg'] = isset($event_data['use_eventbrite_reg']) ? $event_data['use_eventbrite_reg'] : 0;
+		// Initialize the API client
+		$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+									   'user_key' => $ee_eb_options['user_key']);
+		$eb_client = new EE_Eventbrite( $authentication_tokens );
 		
-		//Merge and save the arrays
-		$eb_event_data = array( 'eventbrite_id' => $event_response->process->id, 'eb_ticket_ids' => $ticket_ids, 'use_eventbrite_reg'=>$event_data['use_eventbrite_reg'] );
-		do_action('action_hook_espresso_update_event_meta', $event_id, $eb_event_data);
-
-		if ($eb_updated == TRUE){ 
-			$notifications['success'][] = sprintf(__('Event was successfully added to Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
-		}else{
-			$notifications['error'][] = __('An error occured. The event was not updated in Eventbrite.', 'event_espresso');
-		}
-	
-		
-	}else{
-		$notifications['error'][] = __('An error occured. The event was not created in Eventbrite.', 'event_espresso');
-	}
-	
-	// display success messages
-	if ( ! empty( $notifications['success'] )) { 
-		$success_msg = implode( $notifications['success'], '<br />' );
-	?>
-		<div id="message" class="updated fade">
-			<p> <strong><?php echo $success_msg; ?></strong> </p>
-		</div>
-	<?php
-	}
-	// display error messages
-	if ( ! empty( $notifications['error'] )) {
-		$error_msg = implode( $notifications['error'], '<br />' );
-	?>
-		<div id="message" class="error">
-		<p> <strong><?php echo $error_msg; ?></strong> </p>
-		</div>
-	<?php 
-	}
-}
-
-add_action('action_hook_espresso_insert_event_success', 'espresso_save_eventbrite_event', 100, 1);
-
-//Update an event in Eventbrite
-function espresso_update_eventbrite_event($event_data){
-	global $wpdb, $org_options, $ee_eb_options;
-	$eb_updated = FALSE;
-	$data = (object)array();
-	$event_id = $event_data['event_id'];
-	$notifications['success'] = array(); 
-	$notifications['error']	 = array(); 
-	
-	//Load the class files
-	if(!class_exists('EE_Eventbrite')) { 
-		require_once("Eventbrite.php"); 
-	}
-	
-	// Initialize the API client
-	$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
-								   'user_key' => $ee_eb_options['user_key']);
-	$eb_client = new EE_Eventbrite( $authentication_tokens );
-	
-	//Get the event meta
-	$sql = "SELECT e.event_meta";
-	$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
-	$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
-	$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
-	
-	//Unserilaize the meta
-	$data->event_meta = unserialize($data->event_meta);
-	
-	//Save any changes to the Eventbrite status for the event
-	$event_data['use_eventbrite_reg'] = isset($event_data['use_eventbrite_reg']) ? $event_data['use_eventbrite_reg'] : 0;
-	do_action('action_hook_espresso_update_event_meta', $event_id, array('use_eventbrite_reg'=>$event_data['use_eventbrite_reg']));
-	
-		
-	//If this event has an EB event id, then we delete it
-	if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
-			
-				
 		//see http://developer.eventbrite.com/doc/events/event_new/ for a
 		// description of the available event_new parameters:
-		$event_update_params = array(
-			'id' => $data->event_meta['eventbrite_id'],
+		$event_new_params = array(
 			'title' => $event_data['event'],
 			'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
 			'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
@@ -237,30 +107,171 @@ function espresso_update_eventbrite_event($event_data){
 			'description' => $event_data['event_desc'],
 			'capacity' => $_REQUEST['reg_limit'],
 			'status' => 'live',
+			'timezone' => get_option('timezone_string')
 		);
 		
 		//Save the event within EB
-		$event_response = $eb_client->event_update($event_update_params);
+		$event_response = $eb_client->event_new($event_new_params);
 		
 		//Create the tickets
 		if ($event_response->process->status == 'OK') {
 			$eb_updated = TRUE;
+			$ticket_ids	= array();
 			$i = 1;
-			$count = count($event_data['price_type']);
-			
 			//For each Event Espresso price type, create a ticket in EB
-			foreach ($event_data['price_type'] as $k => $v) {
+			foreach ($_REQUEST['event_cost'] as $k => $v) {
+				if ($v != '') {
+					$v = (float)preg_replace('/[^0-9\.]/ui','',$v);//Removes non-integer characters
+					$price_type = !empty($_REQUEST['price_type'][$k]) ? sanitize_text_field(stripslashes_deep($_REQUEST['price_type'][$k])) : __('General Admission', 'event_espresso');
+			
+					$ticket_new_params = array(
+						'event_id' => $event_response->process->id,
+						'start_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_start'] . ' ' . $event_data['registration_startT'])), // "YYYY-MM-DD HH:MM:SS"
+						'end_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_end'] . ' ' . $event_data['registration_endT'])), // "YYYY-MM-DD HH:MM:SS"
+						'is_donation ' => 0,
+						'name' => $price_type,
+						'price' => $v,
+						'quantity_available' => $event_data['reg_limit'],
+						'min' => '1',
+						'max' => $event_data['additional_limit'],
+					);
 					
+					//Save the ticket details in the event
+					$ticket_response = $eb_client->ticket_new($ticket_new_params);
+					if ($ticket_response->process->status != 'OK') {
+						$eb_updated = FALSE;
+						$notifications['error'][] = __('An error occured. The ticket was not added to the event in Eventbrite.', 'event_espresso');
+					}else{
+						$eb_updated = TRUE;
+					}
+					
+					//Create an array of the new ticket ids
+					$ticket_ids[$i] = $ticket_response->process->id;
+				}
+				$i ++;
+			}
+			
+			//Update to use Eventbrite setting
+			$event_data['use_eventbrite_reg'] = isset($event_data['use_eventbrite_reg']) ? $event_data['use_eventbrite_reg'] : 0;
+			
+			//Merge and save the arrays
+			$eb_event_data = array( 'eventbrite_id' => $event_response->process->id, 'eb_ticket_ids' => $ticket_ids, 'use_eventbrite_reg' => $event_data['use_eventbrite_reg'], 'post_to_eventbrite' => $event_data['post_to_eventbrite'] );
+			do_action('action_hook_espresso_update_event_meta', $event_id, $eb_event_data);
+
+			if ($eb_updated == TRUE){ 
+				$notifications['success'][] = sprintf(__('Event was successfully added to Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
+			}else{
+				$notifications['error'][] = __('An error occured. The event was not updated in Eventbrite.', 'event_espresso');
+			}
+		
+			
+		}else{
+			$notifications['error'][] = __('An error occured. The event was not created in Eventbrite.', 'event_espresso');
+		}
+		
+		// display success messages
+		if ( ! empty( $notifications['success'] )) { 
+			$success_msg = implode( $notifications['success'], '<br />' );
+		?>
+			<div id="message" class="updated fade">
+				<p> <strong><?php echo $success_msg; ?></strong> </p>
+			</div>
+		<?php
+		}
+		// display error messages
+		if ( ! empty( $notifications['error'] )) {
+			$error_msg = implode( $notifications['error'], '<br />' );
+		?>
+			<div id="message" class="error">
+			<p> <strong><?php echo $error_msg; ?></strong> </p>
+			</div>
+		<?php 
+		}
+	}
+}
+
+add_action('action_hook_espresso_insert_event_success', 'espresso_save_eventbrite_event', 100, 1);
+
+//Update an event in Eventbrite
+function espresso_update_eventbrite_event($event_data){
+
+	if ( $event_data['post_to_eventbrite'] == 1 && ( empty($event_data['eventbrite_id']) || $event_data['eventbrite_id'] == 0 ) ){
+		do_action('action_hook_espresso_insert_event_success',$event_data);
+		return;
+	}
+	
+		global $wpdb, $org_options, $ee_eb_options;
+		$eb_updated = FALSE;
+		$data = (object)array();
+		$event_id = $event_data['event_id'];
+		$notifications['success'] = array(); 
+		$notifications['error']	 = array(); 
+		
+		//Load the class files
+		if(!class_exists('EE_Eventbrite')) { 
+			require_once("Eventbrite.php"); 
+		}
+		
+		// Initialize the API client
+		$authentication_tokens = array('app_key'  => $ee_eb_options['app_key'],
+									   'user_key' => $ee_eb_options['user_key']);
+		$eb_client = new EE_Eventbrite( $authentication_tokens );
+		
+		//Get the event meta
+		$sql = "SELECT e.event_meta";
+		$sql .= " FROM " . EVENTS_DETAIL_TABLE . " e ";
+		$sql.= " WHERE e.id = '" . $event_id . "' LIMIT 0,1";
+		$data = $wpdb->get_row( $wpdb->prepare( $sql, NULL ) );
+		
+		//Unserilaize the meta
+		$data->event_meta = unserialize($data->event_meta);
+		
+		//Save any changes to the Eventbrite status for the event
+		$event_data['use_eventbrite_reg'] = isset($event_data['use_eventbrite_reg']) ? $event_data['use_eventbrite_reg'] : 0;
+		//do_action('action_hook_espresso_update_event_meta', $event_id, array('use_eventbrite_reg'=>$event_data['use_eventbrite_reg']));
+		
+			
+		//If this event has an EB event id, then we delete it
+		if ( isset($data->event_meta['eventbrite_id']) && $data->event_meta['eventbrite_id'] > 0) {
+					
+			//see http://developer.eventbrite.com/doc/events/event_new/ for a description of the available event_new parameters:
+			$event_update_params = array(
+				'id' => $data->event_meta['eventbrite_id'],
+				'title' => $event_data['event'],
+				'start_date' => date('Y-m-d H:i:s', strtotime($event_data['start_date'] . ' ' . $event_data['event_start_time'])), // "YYYY-MM-DD HH:MM:SS"
+				'end_date' => date('Y-m-d H:i:s', strtotime($event_data['end_date'] . ' ' . $event_data['event_end_time'])), // "YYYY-MM-DD HH:MM:SS"
+				'privacy' => 1,  // zero for private (not available in search), 1 for public (available in search)
+				'description' => $event_data['event_desc'],
+				'capacity' => $_REQUEST['reg_limit'],
+				'status' => 'live',
+			);
+			
+			//Update the event within EB
+			$event_response = $eb_client->event_update($event_update_params);
+			
+			//Update the existing tickets
+			if ($event_response->process->status == 'OK') {
+				$eb_updated = TRUE;
+				$i = 1;
+				$count_price_types = count($event_data['price_type']);
+				$count_eb_ticket_ids = count($data->event_meta['eb_ticket_ids']);
+				$price_types_added = array();
+				
+				//For each Event Espresso price type, update the ticket in EB
+				foreach ($event_data['price_type'] as $k => $v) {
+						
 					if (!empty($v)) {
 					
 						$event_cost = (float)preg_replace('/[^0-9\.]/ui','',$event_data['event_cost'][$k]);//Removes non-integer characters
-			
+						
+						//For each existing ticket, update the ticket in EB
 						foreach ($data->event_meta['eb_ticket_ids'] as $tv ){
-							
-							if ($data->event_meta['eb_ticket_ids'][$i] == $tv){
 								
+							if ($data->event_meta['eb_ticket_ids'][$i] == $tv){
+									
 								$ticket_update_params = array(
 									'id' => $tv,
+									'i'  => $i,
 									'start_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_start'] . ' ' . $event_data['registration_startT'])), // "YYYY-MM-DD HH:MM:SS"
 									'end_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_end'] . ' ' . $event_data['registration_endT'])), // "YYYY-MM-DD HH:MM:SS"
 									'is_donation ' => 0,
@@ -270,49 +281,83 @@ function espresso_update_eventbrite_event($event_data){
 									'min' => '1',
 									'max' => $event_data['additional_limit'],
 								);
-							
+								
 								//Save the ticket details in the event
 								$ticket_response = $eb_client->ticket_update($ticket_update_params);
-								if ($ticket_response->process->status != 'OK') {
+								if ($ticket_response->process->status == 'OK') {
+									$eb_updated = TRUE;
+									$price_types_added[$i] = $tv;
+								}else{
 									$eb_updated = FALSE;
 									$notifications['error'][] = __('An error occured. The ticket was not updated in Eventbrite.', 'event_espresso');
-								}else{
-									$eb_updated = TRUE;
 								}
 							}
 						}
-						
+					
+					
+						if ($price_types_added == '1'){
+							
+							$ticket_new_params = array(
+								'event_id' => $data->event_meta['eventbrite_id'],
+								'i'  => $i,
+								'start_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_start'] . ' ' . $event_data['registration_startT'])), // "YYYY-MM-DD HH:MM:SS"
+								'end_date' => date('Y-m-d H:i:s', strtotime($event_data['registration_end'] . ' ' . $event_data['registration_endT'])), // "YYYY-MM-DD HH:MM:SS"
+								'is_donation ' => 0,
+								'name' => $v,
+								'price' => $event_cost,
+								'quantity_available' => $event_data['reg_limit'],
+								'min' => '1',
+								'max' => $event_data['additional_limit'],
+							);
+							
+							//Save the ticket details in the event
+							$ticket_response = $eb_client->ticket_new($ticket_new_params);
+							if ($ticket_response->process->status != 'OK') {
+								$eb_updated = FALSE;
+								$notifications['error'][] = __('An error occured. The ticket was not added to the event in Eventbrite.', 'event_espresso');
+							}else{
+								$eb_updated = TRUE;
+								//Create an array of the new ticket ids
+								$ticket_ids[$i] = $ticket_response->process->id;
+							}							
+					
+						}
 					}
-				$i ++;
+					$i ++;
+				}
+				
+				if (!empty($ticket_ids) && is_array($ticket_ids)){
+					$eb_event_data = array('eb_ticket_ids'=>array_merge( $data->event_meta['eb_ticket_ids'], $ticket_ids ));
+					do_action('action_hook_espresso_update_event_meta', $event_id, $eb_event_data);
+				}
+				
 			}
-						
+			
+			if ($eb_updated == TRUE){ 
+				$notifications['success'][] = sprintf(__('Event was successfully updated in Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
+			}else{
+				$notifications['error'][] = __('An error occured. The event was not updated in Eventbrite.', 'event_espresso');
+			}
 		}
 		
-		if ($eb_updated == TRUE){ 
-			$notifications['success'][] = sprintf(__('Event was successfully updated in Eventbrite. [%sview%s] [%sedit%s]', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_response->process->id.'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_response->process->id.'" target="_blank">', '</a>');
-		}else{
-			$notifications['error'][] = __('An error occured. The event was not updated in Eventbrite.', 'event_espresso');
+		// display success messages
+		if ( ! empty( $notifications['success'] )) { 
+			$success_msg = implode( $notifications['success'], '<br />' );
+		?>
+			<div id="message" class="updated fade">
+				<p> <strong><?php echo $success_msg; ?></strong> </p>
+			</div>
+		<?php
 		}
-	}
-	
-	// display success messages
-	if ( ! empty( $notifications['success'] )) { 
-		$success_msg = implode( $notifications['success'], '<br />' );
-	?>
-		<div id="message" class="updated fade">
-			<p> <strong><?php echo $success_msg; ?></strong> </p>
-		</div>
-	<?php
-	}
-	// display error messages
-	if ( ! empty( $notifications['error'] )) {
-		$error_msg = implode( $notifications['error'], '<br />' );
-	?>
-		<div id="message" class="error">
-		<p> <strong><?php echo $error_msg; ?></strong> </p>
-		</div>
-	<?php 
-	}
+		// display error messages
+		if ( ! empty( $notifications['error'] )) {
+			$error_msg = implode( $notifications['error'], '<br />' );
+		?>
+			<div id="message" class="error">
+			<p> <strong><?php echo $error_msg; ?></strong> </p>
+			</div>
+		<?php 
+		}
 }
 
 add_action('action_hook_espresso_update_event_success', 'espresso_update_eventbrite_event', 100, 1);
@@ -399,7 +444,7 @@ function espresso_delete_eventbrite_event($event_id){
 add_action('action_hook_espresso_delete_event_success', 'espresso_delete_eventbrite_event', 100, 1);
 
 
-// Begin admin settings screen ###########################
+// Begin admin settings screen
 function espresso_eventbrite_settings() {
 	
 	if (!empty($_POST['update_eventbrite_settings']) && $_POST['update_eventbrite_settings'] == 'update') {
@@ -462,6 +507,76 @@ function espresso_eventbrite_settings() {
 <?php
 }
 
+//Create an advanced options section in the event editor
+function espresso_eventbrite_event_editor_options($event_meta = ''){
+	$values = array(
+		array('id' => false,'text'=> __('No','event_espresso')),
+		array('id' => true, 'text' => __('Yes', 'event_espresso'))
+	);
+	
+	$advanced_options = '<p><strong>'.__('Eventbrite Options:', 'event_espresso').'</strong></p>';
+	
+	if (empty($event_meta) || $event_meta['post_to_eventbrite'] == 0 ){
+		$advanced_options .= '<p class="inputunder"><label>' . __('Post to Eventbrite?', 'event_espresso') . '</label> ' . select_input('post_to_eventbrite', $values, isset($event_meta['post_to_eventbrite']) ? $event_meta['post_to_eventbrite'] : '', 'id="post_to_eventbrite"') . '</p>';
+	}
+	$advanced_options .= '<p id="p_use_eventbrite_reg" class="inputunder"><label>' . __('Use Eventbrite Registration?', 'event_espresso') . '</label> ' . select_input('use_eventbrite_reg', $values, isset($event_meta['use_eventbrite_reg']) ? $event_meta['use_eventbrite_reg'] : '', 'id="use_eventbrite_reg"') . '</p>';
+	if ( isset($event_meta['post_to_eventbrite']) && $event_meta['post_to_eventbrite'] == 1){
+		$advanced_options .= '<p>'.sprintf(__('Eventbrite ID: %s | %s[ view ]%s %s[ edit ]%s', 'event_espresso'),$event_meta['eventbrite_id'],'<a href="http://www.eventbrite.com/event/'.$event_meta['eventbrite_id'].'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_meta['eventbrite_id'].'" target="_blank">', '</a>').'</p>';
+	}
+	ob_start();
+	?>
+	<script type="text/javascript">
+		//<![CDATA[
+		jQuery(document).ready(function($){
+			window.ebp = $('select#post_to_eventbrite option:selected').val();
+			window.ebr = $('select#use_eventbrite_reg option:selected').val();
+			
+			if(window.ebp == ''){
+				$('input#post_to_eventbrite').attr('disabled', true);
+				$('#p_use_eventbrite_reg').attr('style', "opacity: .3");
+			}
+			$('select#post_to_eventbrite').change(function(){
+				window.ebp = $('select#post_to_eventbrite option:selected').val();
+				if(window.ebp == ''){
+					$('input#use_eventbrite_reg').attr('disabled', true);
+					$('p#p_use_eventbrite_reg').attr('style', "opacity: .3");
+				}else {
+					$('input#use_eventbrite_reg').removeAttr('disabled', true);
+					$('p#p_use_eventbrite_reg').removeAttr('style');
+				}
+			});
+			
+			if(window.ebr){
+				$('select#display_reg_form').attr('disabled', true);
+				$('p#p_display_reg_form').attr('style', "opacity: .3");
+				$('#espresso_event_editor').append('<input id="display_reg_form_hidden" type="hidden" name="display_reg_form" value="N" />');
+			}else{
+				$('p#p_display_reg_form').removeAttr('style');
+				$('select#display_reg_form').removeAttr('disabled', true);
+				$('#display_reg_form_hidden').remove();
+			}
+			$('select#use_eventbrite_reg').change(function(){
+				window.ebr = $('select#use_eventbrite_reg option:selected').val();
+				if(window.ebr == ''){
+					$('p#p_display_reg_form').removeAttr('style');
+					$('select#display_reg_form').removeAttr('disabled', true);
+					$('#display_reg_form_hidden').remove();
+				}else{
+					$('select#display_reg_form').attr('disabled', true);
+					$('p#p_display_reg_form').attr('style', "opacity: .3");
+					$('#espresso_event_editor').append('<input id="display_reg_form_hidden" type="hidden" name="display_reg_form" value="N" />');
+
+				}
+			});
+		});
+		//]]>
+	</script>
+	<?php
+	$content = ob_get_clean();
+	return $advanced_options.$content;
+}
+add_filter( 'filter_hook_espresso_event_editor_advanced_options', 'espresso_eventbrite_event_editor_options', 10, 1 );
+
 
 //Override the default event meta
 if (!function_exists('ee_default_event_meta')){
@@ -484,7 +599,7 @@ function espresso_eventbrite_update_event_update_meta($event_meta, $event_id){
 		$eb_ticket_ids = array();
 		
 		if (isset($data->event_meta['eb_ticket_ids'])){
-			$eb_ticket_ids = array('eb_ticket_ids'=>$data->event_meta['eb_ticket_ids']);
+			$eb_ticket_ids = array('eb_ticket_ids' => $data->event_meta['eb_ticket_ids']);
 		}
 		
 		$event_meta = array_replace($data->event_meta, $event_meta, $eb_ticket_ids);
@@ -494,25 +609,16 @@ function espresso_eventbrite_update_event_update_meta($event_meta, $event_id){
 
 add_filter( 'filter_hook_espresso_update_event_update_meta', 'espresso_eventbrite_update_event_update_meta', 10, 2 );
 
-
-//Create 
-function espresso_eventbrite_event_editor_options($event_meta = ''){
-	
-	$values = array(
-		array('id' => '0','text'=> __('No','event_espresso')),
-		array('id' => '1', 'text' => __('Yes', 'event_espresso'))
-	);
-	
-	$advanced_options = '<p><strong>'.__('Eventbrite Options:', 'event_espresso').'</strong></p><p class="inputunder"><label>' . __('Use Eventbrite Registration?', 'event_espresso') . '</label> ' . select_input('use_eventbrite_reg', $values, isset($event_meta['use_eventbrite_reg']) ? $event_meta['use_eventbrite_reg'] : '') . '</p>';
-	if ( isset($event_meta['use_eventbrite_reg']) && $event_meta['use_eventbrite_reg'] == 1){
-		$advanced_options .= '<p><a href="'.$eb_url.'" target="_blank">'.sprintf(__('[%sview%s] [%sedit%s] on Eventbrite', 'event_espresso'),'<a href="http://www.eventbrite.com/event/'.$event_meta['eventbrite_id'].'" target="_blank">', '</a>','<a href="http://www.eventbrite.com/edit?eid='.$event_meta['eventbrite_id'].'" target="_blank">', '</a>').'</a></p>';
-	}
-	
-		
-	return $advanced_options;
+//Adds a way to filter the custom meta fields
+function espresso_eventbrite_hidden_meta($hiddenmeta = ''){
+	$new_hiddenmeta = array("eb_ticket_ids", "use_eventbrite_reg", "post_to_eventbrite");
+	$hiddenmeta = array_merge($hiddenmeta, $new_hiddenmeta);
+	return $hiddenmeta;
 }
-add_filter( 'filter_hook_espresso_event_editor_advanced_options', 'espresso_eventbrite_event_editor_options', 10, 1 );
+add_filter( 'filter_hook_espresso_hidden_meta', 'espresso_eventbrite_hidden_meta', 10, 1 );
 
+
+//Creates an Eventbrite widget to display a list of available tickets
 function espresso_eventbrite_display_event_tickets($event_id, $event_meta, $all_meta){
 	global $ee_eb_options;
 	
@@ -548,6 +654,7 @@ function espresso_eventbrite_display_event_tickets($event_id, $event_meta, $all_
 }
 add_action('action_hook_espresso_registration_page_bottom','espresso_eventbrite_display_event_tickets', 100, 3);
 
+//Creates an Eventbrite calendar widget
 function espresso_eventbrite_display_eventbrite_calendar($atts = ''){
 	global $ee_eb_options, $this_event_id;
 	
@@ -570,6 +677,7 @@ function espresso_eventbrite_display_eventbrite_calendar($atts = ''){
 }
 add_shortcode('eeeb_calendar','espresso_eventbrite_display_eventbrite_calendar');
 
+//Creates an Eventbrite countdown widget
 function espresso_eventbrite_display_eventbrite_countdown($atts = ''){
 	global $ee_eb_options, $this_event_id;
 	
@@ -592,6 +700,7 @@ function espresso_eventbrite_display_eventbrite_countdown($atts = ''){
 }
 add_shortcode('eeeb_countdown','espresso_eventbrite_display_eventbrite_countdown');
 
+//Creates an Eventbrite registration page widget
 function espresso_eventbrite_display_eventbrite_registration($atts = ''){
 	global $ee_eb_options, $this_event_id;
 	
@@ -614,6 +723,7 @@ function espresso_eventbrite_display_eventbrite_registration($atts = ''){
 }
 add_shortcode('eeeb_registration','espresso_eventbrite_display_eventbrite_registration');
 
+//Creates an Eventbrite ticket widget
 function espresso_eventbrite_display_eventbrite_tickets($atts = ''){
 	global $ee_eb_options, $this_event_id;
 	$height = isset($atts['height']) ? $atts['height'] : '650px';
