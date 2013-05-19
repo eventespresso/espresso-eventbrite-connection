@@ -4,7 +4,7 @@
   Plugin URI: http://eventespresso.com/
   Description: Eventbrite integration for Event Espresso <a href="admin.php?page=support" >Support</a>
 
-  Version: 1.0-DEV
+  Version: 1.0-BETA
 
   Author: Event Espresso
   Author URI: http://www.eventespresso.com
@@ -29,7 +29,7 @@
 //Define the version of the plugin
 function espresso_eventbrite_version() {
 	do_action('action_hook_espresso_log', __FILE__, __FUNCTION__, '');
-	return '1.0-DEV';
+	return '1.0-BETA';
 }
  
 //Update notifications
