@@ -29,7 +29,7 @@
 //Define the version of the plugin
 function espresso_eventbrite_version() {
 	do_action('action_hook_espresso_log', __FILE__, __FUNCTION__, '');
-	return '1.0-BETA';
+	return '1.0-DEV';
 }
  
 //Update notifications
