@@ -633,15 +633,15 @@ function espresso_eventbrite_event_editor_options($event_meta = ''){
 				<label>' . __('Post to Eventbrite?', 'event_espresso') . '</label>
 				' . select_input('post_to_eventbrite', $values, isset($event_meta['post_to_eventbrite']) ? $event_meta['post_to_eventbrite'] : FALSE, 'id="post_to_eventbrite"') . '
 			</p>';
-			
-	// are we posting to eventbrite and  have an eventbrite_id ???
-	if ( isset( $event_meta['post_to_eventbrite'] ) && $event_meta['post_to_eventbrite'] == 1 && isset( $event_meta['eventbrite_id'] ) && ! empty( $event_meta['eventbrite_id'] )) {
-		
-		$advanced_options .= '
+			$advanced_options .= '
 			<p id="p_use_eventbrite_reg" class="inputunder">
 				<label>' . __('Use Eventbrite Registration?', 'event_espresso') . '</label>
 				' . select_input('use_eventbrite_reg', $values, isset($event_meta['use_eventbrite_reg']) ? $event_meta['use_eventbrite_reg'] : FALSE, 'id="use_eventbrite_reg"') . '
-			</p>
+			</p>';
+			
+	// are we posting to eventbrite and  have an eventbrite_id ???
+	if ( isset( $event_meta['post_to_eventbrite'] ) && $event_meta['post_to_eventbrite'] == 1 && isset( $event_meta['eventbrite_id'] ) && ! empty( $event_meta['eventbrite_id'] )) {
+		$advanced_options .= '
 			<p>
 				'.sprintf(
 					__('Eventbrite ID: %s | %s[ view ]%s %s[ edit ]%s', 'event_espresso'),
