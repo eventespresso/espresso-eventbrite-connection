@@ -345,4 +345,3 @@ class EE_Eventbrite {
         return '<a class="espresso_eb_linkWidget" href="http://www.eventbrite.com/event/' . $evnt->id . '?ref=elink" target="_blank" style="color:' . ( $color ? $color : "#000000" ) . ';">' . ( $text ? $text : $evnt->title ) . '</a>';
     }
 };
-?>
