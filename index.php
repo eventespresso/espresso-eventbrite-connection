@@ -620,7 +620,8 @@ function espresso_eventbrite_settings() {
 }
 
 //Create an advanced options section in the event editor
-function espresso_eventbrite_event_editor_options($event_meta = ''){
+function espresso_eventbrite_event_editor_options(){
+	global $event_meta;
 	$values = array(
 		array('id' => false,'text'=> __('No','event_espresso')),
 		array('id' => true, 'text' => __('Yes', 'event_espresso'))
